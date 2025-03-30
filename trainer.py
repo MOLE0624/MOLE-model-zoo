@@ -9,12 +9,15 @@
 # ================================================================================
 
 import argparse
+import os
+from datetime import datetime
 from functools import partial
 from typing import Callable, Dict, Tuple
 
 import jax
 import jax.numpy as jnp
 import optax
+import orbax.checkpoint as orbax
 from flax import nnx
 
 
@@ -51,11 +54,21 @@ class BaseTrainer:
         input_shape: tuple,
         rng: jax.Array,
         lr: float = 1e-3,
+        checkpoint_dir: str = "./checkpoints",
     ):
         self.model = model_cls(rng, input_shape)
         self.params = nnx.state(self.model)
         self.optimizer = optax.adam(lr)
         self.opt_state = self.optimizer.init(self.params)
+
+        # Setup checkpointing
+        os.makedirs(checkpoint_dir, exist_ok=True)
+        self.checkpoint_dir = checkpoint_dir
+        self.ckpt_manager = orbax.CheckpointManager(
+            self.checkpoint_dir,
+            orbax.PyTreeCheckpointer(),
+            orbax.CheckpointManagerOptions(max_to_keep=5),
+        )
 
     def loss_fn(self, params: nnx.State, batch: Dict[str, jnp.ndarray]) -> jnp.ndarray:
         raise NotImplementedError
@@ -70,3 +83,18 @@ class BaseTrainer:
         )
         nnx.update(self.model, self.params)
         return float(loss)  # Convert here, safely outside jit
+
+    def save_checkpoint(
+        self, epoch: int, train_acc: float = 0.0, test_acc: float = 0.0
+    ):
+        """Save model checkpoint using Orbax."""
+        checkpoint_data = {
+            "params": self.params,
+            "opt_state": self.opt_state,
+            "epoch": epoch,
+            "train_acc": train_acc,
+            "test_acc": test_acc,
+            "timestamp": datetime.now().isoformat(),
+        }
+        self.ckpt_manager.save(epoch, checkpoint_data)
+        print(f"✅ Saved checkpoint for epoch {epoch}")

@@ -172,3 +172,7 @@ cython_debug/
 
 # PyPI configuration file
 .pypirc
+
+# Ignore all Orbax-style checkpoint directories (flexible name, nested structure)
+**/_CHECKPOINT_METADATA
+**/default/
